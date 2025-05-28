@@ -137,9 +137,6 @@ export const options: NextAuthOptions = {
       return session;
     },
   },
-  pages: {
-    signIn: "/auth/signin",
-  },
   // Add this for production
   session: {
     strategy: "jwt",
