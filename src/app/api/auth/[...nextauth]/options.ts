@@ -84,17 +84,24 @@ export const options: NextAuthOptions = {
     }),
   ],
   callbacks: {
+    // async redirect({ url, baseUrl }) {
+    //   // If it's a sign-in, go to home
+    //   if (url.includes("/auth/signin")) {
+    //     return baseUrl + "/";
+    //   }
+    //   // If it's a sign-out, go to home
+    //   if (url.includes("/auth/signout")) {
+    //     return baseUrl + "/";
+    //   }
+    //   // Default to home page
+    //   return baseUrl + "/";
+    // },
     async redirect({ url, baseUrl }) {
-      // If it's a sign-in, go to home
-      if (url.includes("/auth/signin")) {
-        return baseUrl + "/";
-      }
-      // If it's a sign-out, go to home
-      if (url.includes("/auth/signout")) {
-        return baseUrl + "/";
-      }
-      // Default to home page
-      return baseUrl + "/";
+      // Allow relative callback URLs
+      if (url.startsWith("/")) return `${baseUrl}${url}`;
+      // Allow callback URLs on the same origin
+      if (new URL(url).origin === baseUrl) return url;
+      return baseUrl;
     },
     // async jwt({ token, user }) {
     //   if (user) token.role = user.role;
@@ -129,5 +136,12 @@ export const options: NextAuthOptions = {
       }
       return session;
     },
+  },
+  pages: {
+    signIn: "/auth/signin",
+  },
+  // Add this for production
+  session: {
+    strategy: "jwt",
   },
 };
