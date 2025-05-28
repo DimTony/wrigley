@@ -1,3 +1,19 @@
+import DesktopHomePage from "./components/(desktop)/Home";
+import DesktopLayout from "./context/DesktopLayout";
+
 export default async function Home() {
-  return <h1 className='text-5xl'>Public Home Page</h1>;
+  return (
+    <>
+      {/* <MobileLayout>
+        <MobileHomePage />
+      </MobileLayout> */}
+
+      <DesktopLayout>
+        <DesktopHomePage />
+        {/* <div>Desktop</div> */}
+      </DesktopLayout>
+    </>
+  );
 }
+
+
