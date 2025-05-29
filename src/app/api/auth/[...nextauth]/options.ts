@@ -111,9 +111,9 @@ export const options: NextAuthOptions = {
     async jwt({ token, user }) {
       // When user signs in, add custom fields to token
       if (user) {
-        console.log("User in JWT callback:", user);
-        token.id = user._id;
-        token.image = user.profilePic;
+        // console.log("User in JWT callback:", user);
+        token.id = user._id ?? "";
+        token.image = user.profilePic ?? "";
         token.username = user.username;
         token.role = user.role;
         token.profilePic = user.profilePic;
