@@ -16,12 +16,28 @@ interface ErrorState {
   [key: string]: { hasError: boolean; message: string };
 }
 
-interface CartItem {
-  productId: string;
-  quantity: number;
-  price: number;
-  // other product details
-}
+// interface CartItem {
+//   productId: string;
+//   key: string; // composite key: ${productKey}-${size}
+//   size: string;
+//   quantity: number;
+//   price: number;
+//   title: string;
+//   image: string;
+// }
+
+// interface Product {
+//   _id: string;
+//   key: string;
+//   title: string;
+//   amount: number;
+//   image: string;
+//   images?: string[];
+//   sizes?: string[];
+//   requiresSize: boolean;
+//   promo?: string;
+//   type?: string;
+// }
 
 interface AppState {
   auth: AuthState;
@@ -33,17 +49,25 @@ interface AppState {
   setIsCartOpen: (value: boolean) => void;
   cart: any[];
   total: number;
-  addItem: (item: any) => void;
-  removeItem: (productId: string) => void;
-  updateQuantity: (productId: string, quantity: number) => void;
+  addItem: (item: any, size?: string, quantity?: number) => void;
+  removeItem: (itemKey: string) => void;
+  updateQuantity: (itemKey: string, quantity: number) => void;
   clearCart: () => void;
 
+  // Size Modal State
+  sizeModalProduct: any | null;
+  isSizeModalOpen: boolean;
+  openSizeModal: (product: any) => void;
+  closeSizeModal: () => void;
+  addItemWithSize: (product: any, size: string, quantity: number) => void;
+
   syncCartToServer: () => void;
+  autoSyncCart: () => void;
   loadCartFromServer: () => void;
   onLogin: () => void;
   onLogout: () => void;
 
-  cartSynced: boolean; // Add this flag
+  cartSynced: boolean;
   setCartSynced: (synced: boolean) => void;
 
   // UI state actions
@@ -69,6 +93,8 @@ const initialState = {
   cart: [],
   total: 0,
   cartSynced: false,
+  sizeModalProduct: null,
+  isSizeModalOpen: false,
 };
 
 export const useStore = create<AppState>()(
@@ -78,30 +104,45 @@ export const useStore = create<AppState>()(
 
       setIsCartOpen: (value) => set({ isCartOpen: value }),
 
-      addItem: (item: any) => {
+      // Size Modal Actions
+      openSizeModal: (product) =>
+        set({
+          sizeModalProduct: product,
+          isSizeModalOpen: true,
+        }),
+
+      closeSizeModal: () =>
+        set({
+          sizeModalProduct: null,
+          isSizeModalOpen: false,
+        }),
+
+      addItemWithSize: (product, size, quantity) => {
+        get().addItem(product, size, quantity);
+      },
+
+      addItem: (item: any, size = "default", quantity = 1) => {
         const { cart } = get();
-        const itemKey = `${item.key}-${item.size}`; // Composite key
+        const itemKey = `${item.key}-${size}`; // Composite key
 
         const existing = cart.find((i) => i.key === itemKey);
 
         let updatedCart;
         if (existing) {
           updatedCart = cart.map((i) =>
-            i.key === itemKey ? { ...i, quantity: i.quantity + 1 } : i
+            i.key === itemKey ? { ...i, quantity: i.quantity + quantity } : i
           );
         } else {
-          updatedCart = [
-            ...cart,
-            {
-              productId: item._id,
-              key: itemKey,
-              size: item.size,
-              quantity: 1,
-              price: item.amount,
-              title: item.title,
-              image: item.image,
-            },
-          ];
+          const newCartItem: any = {
+            productId: item._id,
+            key: itemKey,
+            size: size,
+            quantity: quantity,
+            price: item.amount,
+            title: item.title,
+            image: item.image,
+          };
+          updatedCart = [...cart, newCartItem];
         }
 
         const newTotal = updatedCart.reduce(
@@ -109,17 +150,47 @@ export const useStore = create<AppState>()(
           0
         );
 
-        set({ cart: updatedCart, total: newTotal });
+        set({
+          cart: updatedCart,
+          total: newTotal,
+          cartSynced: false, // Mark as unsynced after modification
+        });
+
+        // Auto-sync for authenticated users
+        get().autoSyncCart();
+
+        // Show success toast
+        const sizeText = size !== "default" ? ` (Size: ${size})` : "";
+        toast.success(`${item.title}${sizeText} added to cart!`, {
+          icon: React.createElement(CircleCheckBig, {
+            className: "h-4 w-4",
+          }),
+        });
       },
 
       removeItem: (key: string) => {
+        console.log("removing ", key);
         const updatedCart = get().cart.filter((i) => i.key !== key);
         const newTotal = updatedCart.reduce(
           (acc, i) => acc + i.price * i.quantity,
           0
         );
 
-        set({ cart: updatedCart, total: newTotal });
+        set({
+          cart: updatedCart,
+          total: newTotal,
+          cartSynced: false, // Mark as unsynced after modification
+        });
+
+        // Auto-sync for authenticated users
+        get().autoSyncCart();
+
+        // const sizeText = size !== "default" ? ` (Size: ${size})` : "";
+        toast.success(`${key} removed from cart!`, {
+          icon: React.createElement(CircleCheckBig, {
+            className: "h-4 w-4",
+          }),
+        });
       },
 
       updateQuantity: (key: string, quantity: number) => {
@@ -132,27 +203,79 @@ export const useStore = create<AppState>()(
           0
         );
 
-        set({ cart: updatedCart, total: newTotal });
-      },
-
-      clearCart: () => set({ cart: [], total: 0 }),
-
-      syncCartToServer: async () => {
-        const { cart, total } = get();
-        const res = await fetch("/api/cart/sync", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ cart, total }),
+        set({
+          cart: updatedCart,
+          total: newTotal,
+          cartSynced: false, // Mark as unsynced after modification
         });
 
-        if (!res.ok) toast.error("Failed to sync cart");
+        // Auto-sync for authenticated users
+        get().autoSyncCart();
+      },
+
+      clearCart: () => {
+        set({
+          cart: [],
+          total: 0,
+          cartSynced: false, // Mark as unsynced after modification
+        });
+
+        // Auto-sync for authenticated users
+        get().autoSyncCart();
+      },
+
+      syncCartToServer: async () => {
+        const { cart, total, auth } = get();
+
+        // Only sync if user is authenticated
+        if (!auth.isAuthenticated) {
+          return;
+        }
+
+        try {
+          const res = await fetch("/api/cart/sync", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ cart, total }),
+          });
+
+          if (!res.ok) {
+            throw new Error(
+              `Failed to sync cart: ${res.status} ${res.statusText}`
+            );
+          }
+
+          // Mark cart as synced
+          set({ cartSynced: true });
+        } catch (error) {
+          console.error("Cart sync error:", error);
+          set({ cartSynced: false });
+          toast.error("Failed to sync cart to server");
+        }
+      },
+
+      // Auto-sync helper that can be called after cart modifications
+      autoSyncCart: async () => {
+        const { auth, cartSynced } = get();
+
+        // Only auto-sync if user is authenticated and cart is not already synced
+        if (auth.isAuthenticated && !cartSynced) {
+          // Debounce the sync to avoid too many requests
+          setTimeout(async () => {
+            await get().syncCartToServer();
+          }, 1000);
+        }
       },
 
       loadCartFromServer: async () => {
-        const res = await fetch("/api/cart");
-        if (res.ok) {
-          const data = await res.json();
-          set({ cart: data.cart, total: data.total });
+        try {
+          const res = await fetch("/api/cart");
+          if (res.ok) {
+            const data = await res.json();
+            set({ cart: data.cart || [], total: data.total || 0 });
+          }
+        } catch (error) {
+          console.error("Load cart error:", error);
         }
       },
 
@@ -160,73 +283,163 @@ export const useStore = create<AppState>()(
 
       onLogin: async () => {
         try {
-          const { cartSynced } = get();
-
-          // If already synced this session, just load from DB
-          if (cartSynced) {
-            await get().loadCartFromServer();
-            return;
-          }
-
-          // First time login this session - do the merge logic
-          const guestCart = get().cart;
-
+          // 1. Load the user's saved cart from the database
           const res = await fetch("/api/cart");
-          let dbCart = [];
+          let dbCart: any[] = [];
 
           if (res.ok) {
             const data = await res.json();
             dbCart = data.cart || [];
           }
 
-          // Merge logic here (same as before)
-          const mergedCart = [...dbCart];
+          // 2. Get the current guest cart
+          const guestCart = get().cart;
+
+          // 3. Create a map of DB cart items for easier lookup
+          const dbCartMap = new Map<string, any>();
+          dbCart.forEach((item) => {
+            dbCartMap.set(item.key, item);
+          });
+
+          // 4. Merge the carts - add quantities when items match
+          const mergedCart = [...dbCart]; // Start with DB cart
+          let hasNewItems = false;
 
           guestCart.forEach((guestItem) => {
             const existingIndex = mergedCart.findIndex(
               (dbItem) => dbItem.key === guestItem.key
             );
 
-            if (existingIndex < 0) {
-              // Only add if it's truly new
+            if (existingIndex >= 0) {
+              // Item exists in both carts - add quantities together
+              const existingItem = mergedCart[existingIndex];
+              const dbQuantity = dbCartMap.get(guestItem.key)?.quantity || 0;
+
+              // Only add if the guest quantity is different from what we expect
+              if (guestItem.quantity !== dbQuantity) {
+                mergedCart[existingIndex] = {
+                  ...existingItem,
+                  quantity: dbQuantity + guestItem.quantity,
+                };
+                hasNewItems = true;
+              }
+            } else {
+              // Item only exists in guest cart - add it completely
               mergedCart.push(guestItem);
+              hasNewItems = true;
             }
           });
 
+          // 5. Calculate the new total
           const newTotal = mergedCart.reduce(
             (acc, item) => acc + item.price * item.quantity,
             0
           );
 
-          set({
-            cart: mergedCart,
-            total: newTotal,
-            cartSynced: true, // Mark as synced
-          });
+          // 6. Update the local state with merged cart
+          set({ cart: mergedCart, total: newTotal });
 
-          await get().syncCartToServer();
+          // 7. Sync the merged cart back to the server if there were changes
+          if (hasNewItems) {
+            await get().syncCartToServer();
+
+            toast.success("Welcome back! Your cart has been updated.", {
+              icon: React.createElement(CircleCheckBig, {
+                className: "h-4 w-4",
+              }),
+            });
+          }
         } catch (error) {
           console.error("Login cart merge error:", error);
+          toast.error("Failed to restore your cart");
+
+          // Fallback: just load from server if merge fails
           await get().loadCartFromServer();
         }
       },
 
       onLogout: async () => {
         try {
-          await get().syncCartToServer();
+          const { cart, total } = get();
+
+          // Show loading state during logout
+          set({ loading: true });
+
+          // Only sync if there are items in cart or if cart state has changed
+          if (cart.length > 0 || total > 0) {
+            console.log("Syncing cart to server before logout...", {
+              cart,
+              total,
+            });
+
+            const syncResponse = await fetch("/api/cart/sync", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ cart, total }),
+            });
+
+            if (!syncResponse.ok) {
+              console.error("Failed to sync cart during logout");
+              toast.error("Failed to save cart changes. Please try again.");
+              set({ loading: false });
+              return; // Don't proceed with logout if sync fails
+            }
+
+            console.log("Cart successfully synced to server");
+            toast.success("Cart saved successfully!", {
+              icon: React.createElement(CircleCheckBig, {
+                className: "h-4 w-4",
+              }),
+            });
+          }
+
+          // Proceed with sign out
           await signOut({ redirect: false });
 
+          // Clear local state after successful logout
           set({
             cart: [],
             total: 0,
-            cartSynced: false, // Reset sync flag
+            cartSynced: false,
+            loading: false,
             auth: {
               user: null,
               isAuthenticated: false,
             },
+            // Also close any open modals
+            sizeModalProduct: null,
+            isSizeModalOpen: false,
           });
+
+          console.log("Logout completed successfully");
         } catch (error) {
           console.error("Logout error:", error);
+          set({ loading: false });
+
+          // Show error but still attempt to sign out
+          toast.error(
+            "Error during logout. Your cart may not have been saved."
+          );
+
+          try {
+            await signOut({ redirect: false });
+            set({
+              cart: [],
+              total: 0,
+              cartSynced: false,
+              auth: {
+                user: null,
+                isAuthenticated: false,
+              },
+              sizeModalProduct: null,
+              isSizeModalOpen: false,
+            });
+          } catch (signOutError) {
+            console.error("Failed to sign out:", signOutError);
+            toast.error(
+              "Failed to sign out completely. Please refresh the page."
+            );
+          }
         }
       },
 
@@ -240,7 +453,6 @@ export const useStore = create<AppState>()(
           },
         }));
 
-        // Show toast notification if there's an error with a message
         if (hasError && message && showToast) {
           toast.error(message);
         }
@@ -266,7 +478,7 @@ export const useStore = create<AppState>()(
         errors: state.errors,
         cart: state.cart,
         total: state.total,
-        cartSynced: state.cartSynced, // Persist the sync flag
+        cartSynced: state.cartSynced,
       }),
     }
   )
