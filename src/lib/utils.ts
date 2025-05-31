@@ -353,6 +353,14 @@ export const validateName = (name: any, fieldName = "Name") => {
   return { isValid: true, message: "" };
 };
 
+export const validateGuestEmail = (email: string) => {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return {
+    isValid: emailRegex.test(email),
+    error: emailRegex.test(email) ? null : "Please enter a valid email address",
+  };
+};
+
 // Comprehensive form validation function
 export const validateCheckoutForm = (
   formData: any,
