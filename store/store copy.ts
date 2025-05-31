@@ -61,6 +61,9 @@ interface AppState {
   closeSizeModal: () => void;
   addItemWithSize: (product: any, size: string, quantity: number) => void;
 
+  // Auth actions
+  setAuthState: (authState: AuthState) => void;
+
   syncCartToServer: () => void;
   autoSyncCart: () => void;
   loadCartFromServer: () => void;
@@ -169,12 +172,20 @@ export const useStore = create<AppState>()(
       },
 
       removeItem: (key: string) => {
-        console.log("removing ", key);
-        const updatedCart = get().cart.filter((i) => i.key !== key);
+        console.log(`Store: Removing item with key: ${key}`);
+        const { cart } = get();
+
+        // Log current cart state
+        console.log(`Store: Current cart before removal:`, cart);
+
+        const updatedCart = cart.filter((i) => i.key !== key);
         const newTotal = updatedCart.reduce(
           (acc, i) => acc + i.price * i.quantity,
           0
         );
+
+        console.log(`Store: Updated cart after removal:`, updatedCart);
+        console.log(`Store: New total: ${newTotal}`);
 
         set({
           cart: updatedCart,
@@ -183,18 +194,18 @@ export const useStore = create<AppState>()(
         });
 
         // Auto-sync for authenticated users
+        console.log(`Store: Triggering auto-sync after item removal`);
         get().autoSyncCart();
-
-        // const sizeText = size !== "default" ? ` (Size: ${size})` : "";
-        toast.success(`${key} removed from cart!`, {
-          icon: React.createElement(CircleCheckBig, {
-            className: "h-4 w-4",
-          }),
-        });
       },
 
       updateQuantity: (key: string, quantity: number) => {
-        const updatedCart = get().cart.map((item) =>
+        console.log(`Store: Updating quantity for key: ${key} to ${quantity}`);
+        const { cart } = get();
+
+        // Log current cart state
+        console.log(`Store: Current cart before quantity update:`, cart);
+
+        const updatedCart = cart.map((item) =>
           item.key === key ? { ...item, quantity } : item
         );
 
@@ -203,6 +214,9 @@ export const useStore = create<AppState>()(
           0
         );
 
+        console.log(`Store: Updated cart after quantity change:`, updatedCart);
+        console.log(`Store: New total: ${newTotal}`);
+
         set({
           cart: updatedCart,
           total: newTotal,
@@ -210,6 +224,7 @@ export const useStore = create<AppState>()(
         });
 
         // Auto-sync for authenticated users
+        console.log(`Store: Triggering auto-sync after quantity update`);
         get().autoSyncCart();
       },
 
@@ -224,31 +239,48 @@ export const useStore = create<AppState>()(
         get().autoSyncCart();
       },
 
+      setAuthState: (authState) => set({ auth: authState }),
+
       syncCartToServer: async () => {
         const { cart, total, auth } = get();
 
+        console.log(`Sync to server: Starting...`);
+        console.log(`Sync to server: Cart data:`, cart);
+        console.log(`Sync to server: Total:`, total);
+        console.log(`Sync to server: Auth state:`, auth);
+
         // Only sync if user is authenticated
         if (!auth.isAuthenticated) {
+          console.log(`Sync to server: Skipped - user not authenticated`);
           return;
         }
 
         try {
+          console.log(`Sync to server: Making API call...`);
           const res = await fetch("/api/cart/sync", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ cart, total }),
           });
 
+          console.log(`Sync to server: API response status:`, res.status);
+
           if (!res.ok) {
+            const errorText = await res.text();
+            console.error(`Sync to server: API error:`, errorText);
             throw new Error(
               `Failed to sync cart: ${res.status} ${res.statusText}`
             );
           }
 
+          const responseData = await res.json();
+          console.log(`Sync to server: API response:`, responseData);
+
           // Mark cart as synced
           set({ cartSynced: true });
+          console.log(`Sync to server: Cart marked as synced`);
         } catch (error) {
-          console.error("Cart sync error:", error);
+          console.error("Sync to server: Error occurred:", error);
           set({ cartSynced: false });
           toast.error("Failed to sync cart to server");
         }
@@ -256,14 +288,34 @@ export const useStore = create<AppState>()(
 
       // Auto-sync helper that can be called after cart modifications
       autoSyncCart: async () => {
-        const { auth, cartSynced } = get();
+        const { auth, cartSynced, cart, total } = get();
+
+        console.log(
+          `Auto-sync triggered. Auth: ${auth.isAuthenticated}, Synced: ${cartSynced}`
+        );
+        console.log(`Current cart for sync:`, cart);
+        console.log(`Current total for sync:`, total);
 
         // Only auto-sync if user is authenticated and cart is not already synced
         if (auth.isAuthenticated && !cartSynced) {
+          console.log(`Auto-sync: Starting sync process...`);
+
           // Debounce the sync to avoid too many requests
           setTimeout(async () => {
-            await get().syncCartToServer();
+            try {
+              console.log(`Auto-sync: Executing sync to server...`);
+              await get().syncCartToServer();
+              console.log(`Auto-sync: Sync completed successfully`);
+            } catch (error) {
+              console.error(`Auto-sync: Sync failed:`, error);
+            }
           }, 1000);
+        } else {
+          if (!auth.isAuthenticated) {
+            console.log(`Auto-sync: Skipped - user not authenticated`);
+          } else if (cartSynced) {
+            console.log(`Auto-sync: Skipped - cart already synced`);
+          }
         }
       },
 
