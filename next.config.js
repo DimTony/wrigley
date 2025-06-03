@@ -10,9 +10,9 @@ const nextConfig = {
       },
     ],
   },
-  experimental: {
-    https: true,
-  },
+  // experimental: {
+  //   https: true,
+  // },
 };
 
 module.exports = nextConfig
