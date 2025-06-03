@@ -10,6 +10,7 @@ declare module "next-auth" {
       email?: string;
       role: string;
       username: string;
+      fullName?: string;
       profilePic: string;
     } & DefaultSession;
   }
@@ -19,6 +20,7 @@ declare module "next-auth" {
     image: string;
     role: string;
     username: string;
+    fullName?: string;
     profilePic: string;
   }
 }
